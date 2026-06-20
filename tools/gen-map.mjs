@@ -1,8 +1,10 @@
 // Generates data/hexmap.json by rasterising traced territory outlines
-// (data/shapes.json) onto the hex grid. Each hex is assigned to the territory
-// with the smallest SIGNED distance to its polygon (negative = inside, so the
-// hex joins whichever shape it sits deepest within; outside shapes it joins the
-// nearest coastline within reach R, else ocean). Tune:  node tools/gen-map.mjs [R]
+// (data/shapes.json) onto the hex grid at SCALE resolution.
+//   - each hex joins the territory with the smallest SIGNED distance to its
+//     polygon (negative = inside), within coastal reach R; else ocean.
+//   - hexes inside a `_seas` polygon are forced to ocean (inland seas / channels
+//     that separate islands from the mainland).
+// Usage:  node tools/gen-map.mjs [R] [SCALE]
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -10,22 +12,22 @@ import { hexToPixel } from '../src/hex.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const shapes = JSON.parse(readFileSync(join(root, 'data/shapes.json'), 'utf8'));
-const R = Number(process.argv[2] ?? 1.6);
+const R = Number(process.argv[2] ?? 1.3);
+const SCALE = Number(process.argv[3] ?? 2);
 
 const SQRT3 = Math.sqrt(3);
-const vpix = ([c, r]) => ({ x: SQRT3 * c, y: 1.5 * r });   // polygon-vertex -> pixel
+const vpix = ([c, r]) => ({ x: SQRT3 * SCALE * c, y: 1.5 * SCALE * r });
+const reach = R * SCALE;
 const ids = Object.keys(shapes).filter(k => !k.startsWith('_'));
 const polys = {};
 for (const id of ids) polys[id] = shapes[id].map(vpix);
+const seas = (shapes._seas || []).map(poly => poly.map(vpix));
 
 function segDist(p, a, b) {
-  const vx = b.x - a.x, vy = b.y - a.y;
-  const wx = p.x - a.x, wy = p.y - a.y;
+  const vx = b.x - a.x, vy = b.y - a.y, wx = p.x - a.x, wy = p.y - a.y;
   const len2 = vx * vx + vy * vy || 1e-9;
-  let t = (wx * vx + wy * vy) / len2;
-  t = Math.max(0, Math.min(1, t));
-  const dx = p.x - (a.x + t * vx), dy = p.y - (a.y + t * vy);
-  return Math.hypot(dx, dy);
+  const t = Math.max(0, Math.min(1, (wx * vx + wy * vy) / len2));
+  return Math.hypot(p.x - (a.x + t * vx), p.y - (a.y + t * vy));
 }
 function inside(p, poly) {
   let yes = false;
@@ -42,17 +44,18 @@ function signedDist(p, poly) {
 }
 
 const allV = ids.flatMap(id => shapes[id]);
-const c0 = Math.min(...allV.map(v => v[0])) - 4, c1 = Math.max(...allV.map(v => v[0])) + 4;
-const r0 = Math.min(...allV.map(v => v[1])) - 4, r1 = Math.max(...allV.map(v => v[1])) + 4;
+const c0 = Math.min(...allV.map(v => v[0])) * SCALE - 4, c1 = Math.max(...allV.map(v => v[0])) * SCALE + 4;
+const r0 = Math.min(...allV.map(v => v[1])) * SCALE - 4, r1 = Math.max(...allV.map(v => v[1])) * SCALE + 4;
 
 const territories = {}; for (const id of ids) territories[id] = [];
-let placed = 0;
+let placed = 0, carved = 0;
 for (let r = r0; r <= r1; r++) {
   for (let c = c0; c <= c1; c++) {
     const p = hexToPixel(c, r, 1);
+    if (seas.some(s => inside(p, s))) { carved++; continue; }
     let best = null, bestD = Infinity;
     for (const id of ids) { const d = signedDist(p, polys[id]); if (d < bestD) { bestD = d; best = id; } }
-    if (best && bestD <= R) { territories[best].push([c, r]); placed++; }
+    if (best && bestD <= reach) { territories[best].push([c, r]); placed++; }
   }
 }
 
@@ -61,7 +64,7 @@ writeFileSync(join(root, 'data/hexmap.json'),
   JSON.stringify(out).replace(/,"(\w[\w_]*":\[)/g, ',\n    "$1').replace(/{"_comment/, '{\n  "_comment') + '\n');
 
 const cnt = ids.map(id => [id, territories[id].length]).sort((a, b) => a[1] - b[1]);
-console.log(`R=${R}  placed ${placed} hexes across ${ids.length} territories`);
+console.log(`R=${R} SCALE=${SCALE}  placed ${placed} hexes, carved ${carved} sea`);
 console.log('smallest:', cnt.slice(0, 4).map(x => `${x[0]} ${x[1]}`).join(', '));
 console.log('largest: ', cnt.slice(-4).map(x => `${x[0]} ${x[1]}`).join(', '));
 const empty = cnt.filter(x => x[1] === 0);

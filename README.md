@@ -16,10 +16,13 @@ split into two layers:
     reinforcement bonuses), and the full adjacency list, including the non-geographic sea routes
     (Alaska↔Kamchatka, Brazil↔North Africa, Western Europe↔North Africa, Siam↔Indonesia, …).
   - [`data/shapes.json`](data/shapes.json) — the editable source: each territory's **traced
-    outline** as `[col,row]` polygon vertices. Edit these to reshape the map.
+    outline** as `[col,row]` polygon vertices, plus a `_seas` list of water polygons (island
+    channels and inland seas — Great Lakes, Black/Red/Caspian) subtracted from the land.
   - [`data/hexmap.json`](data/hexmap.json) — **generated** by `tools/gen-map.mjs`, which rasterises
-    the outlines onto the hex grid: each hex joins the territory it sits deepest inside, so
-    coastlines follow the traced edges and bordering countries share edges.
+    the outlines onto the hex grid at `SCALE` resolution (default 2×, ~4,300 hexes): each hex joins
+    the territory it sits deepest inside, so coastlines follow the traced edges, true islands
+    (Greenland, Britain, Iceland, Japan, Madagascar, Indonesia, New Guinea) stand free, and
+    bordering mainland countries share edges.
 - **View layer** — [`src/main.js`](src/main.js) renders the hexes as extruded prisms in three.js,
   coloured by continent, with the graph drawn above the tiles.
 
@@ -39,7 +42,7 @@ graph overlay and labels from the HUD.
 ## Tooling
 
 ```bash
-node tools/gen-map.mjs [R]   # rasterise shapes.json -> hexmap.json (R = coastal reach)
+node tools/gen-map.mjs [R] [SCALE]   # rasterise shapes.json -> hexmap.json (R=reach, SCALE=res)
 npm run validate             # graph + hex checks (see below); also prints an ASCII map
 npm run map-preview          # render the hex map to preview.png (no browser needed)
 node tools/check-orientation.mjs   # confirm on-screen N/S/E/W without WebGL

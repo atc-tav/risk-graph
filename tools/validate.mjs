@@ -22,13 +22,17 @@ const warns = [];
 // Borders that cross water (or touch an island) and so need NOT physically touch.
 const SEA_ROUTES = new Set([
   'alaska|kamchatka',
-  'greenland|iceland', 'great_britain|iceland', 'iceland|scandinavia',
+  // Greenland is an island (sea routes to Canada + Iceland)
+  'greenland|iceland', 'greenland|northwest_territory', 'greenland|ontario', 'greenland|quebec',
+  'great_britain|iceland', 'iceland|scandinavia',
   'great_britain|northern_europe', 'great_britain|western_europe', 'great_britain|scandinavia',
   'brazil|north_africa',
   'north_africa|western_europe', 'north_africa|southern_europe', 'egypt|southern_europe',
   'east_africa|madagascar', 'madagascar|south_africa',
   'japan|kamchatka', 'japan|mongolia',
-  'indonesia|siam',
+  // Indonesia and New Guinea are islands; W/E Australia are the one landmass
+  'indonesia|siam', 'indonesia|new_guinea', 'indonesia|western_australia',
+  'new_guinea|western_australia', 'eastern_australia|new_guinea',
 ].map(s => s.split('|').sort().join('|')));
 
 // odd-r offset neighbours (pointy-top, odd rows shifted east).
