@@ -15,14 +15,15 @@ split into two layers:
   - [`data/territories.json`](data/territories.json) — the 42 territories, 6 continents (with
     reinforcement bonuses), and the full adjacency list, including the non-geographic sea routes
     (Alaska↔Kamchatka, Brazil↔North Africa, Western Europe↔North Africa, Siam↔Indonesia, …).
-  - [`data/shapes.json`](data/shapes.json) — the editable source: each territory's **traced
-    outline** as `[col,row]` polygon vertices, plus a `_seas` list of water polygons (island
-    channels and inland seas — Great Lakes, Black/Red/Caspian) subtracted from the land.
+  - [`data/shapes.json`](data/shapes.json) — the **real Risk territory outlines** as polygons in
+    SVG-coordinate space, plus the inland `seas`. Imported by `tools/import-svg.mjs` from
+    [raddrick/risk-map-svg](https://github.com/raddrick/risk-map-svg) (adapted from Wikimedia
+    Commons [`File:Risk_board.svg`](https://commons.wikimedia.org/wiki/File:Risk_board.svg), CC).
   - [`data/hexmap.json`](data/hexmap.json) — **generated** by `tools/gen-map.mjs`, which rasterises
-    the outlines onto the hex grid at `SCALE` resolution (default 2×, ~4,300 hexes): each hex joins
-    the territory it sits deepest inside, so coastlines follow the traced edges, true islands
-    (Greenland, Britain, Iceland, Japan, Madagascar, Indonesia, New Guinea) stand free, and
-    bordering mainland countries share edges.
+    those real outlines onto the hex grid (default ~6,800 hexes): each hex joins the territory whose
+    polygon contains it, seas are subtracted, and coastlines/sizes follow the actual map — so true
+    islands (Greenland, Britain, Iceland, Japan, Madagascar, Indonesia, New Guinea) stand free and
+    sizes range realistically (Iceland ~16 hexes → Ukraine ~450).
 - **View layer** — [`src/main.js`](src/main.js) renders the hexes as extruded prisms in three.js,
   coloured by continent, with the graph drawn above the tiles.
 
@@ -42,30 +43,32 @@ graph overlay and labels from the HUD.
 ## Tooling
 
 ```bash
-node tools/gen-map.mjs [R] [SCALE]   # rasterise shapes.json -> hexmap.json (R=reach, SCALE=res)
-npm run validate             # graph + hex checks (see below); also prints an ASCII map
-npm run map-preview          # render the hex map to preview.png (no browser needed)
-node tools/check-orientation.mjs   # confirm on-screen N/S/E/W without WebGL
+bash tools/fetch-svg.sh              # fetch third-party SVG outline sources -> tools/svgsrc/
+node tools/import-svg.mjs            # parse those outlines -> data/shapes.json
+node tools/gen-map.mjs [hexRadius]   # rasterise shapes.json -> hexmap.json (smaller radius = finer)
+npm run validate                     # graph + hex checks (see below); also prints an ASCII map
+npm run map-preview                  # render the hex map to preview.png (no browser needed)
+node tools/check-orientation.mjs     # confirm on-screen N/S/E/W without WebGL
 ```
 
-Workflow for reshaping: edit a polygon in `data/shapes.json` → `node tools/gen-map.mjs` →
-`npm run validate` → `npm run map-preview`.
+Pipeline: `fetch-svg.sh` → `import-svg.mjs` → `data/shapes.json` → `gen-map.mjs` →
+`data/hexmap.json`. The fetched third-party sources (`tools/svgsrc/`) are gitignored; only the
+derived `data/shapes.json` is committed.
 
 `validate` confirms: **42 territories · 83 undirected edges · 6 continents** (NA 9, SA 4, EU 7,
-AF 6, AS 12, AU 4), that **every territory is a contiguous hex blob**, and that **every land
-border is realised as two touching hexes**. Genuine water crossings (Alaska↔Kamchatka, the
-Mediterranean, islands like Britain/Japan/Madagascar) are listed as `SEA_ROUTES` and allowed to
-be gaps.
+AF 6, AS 12, AU 4), and that **every land border is realised as two touching hexes**. Genuine
+water crossings (Alaska↔Kamchatka, the Mediterranean, islands like Britain/Japan/Madagascar) are
+listed as `SEA_ROUTES` and allowed to be gaps. Non-contiguity (real territories have offshore
+islands) and cosmetic corner-touches between non-adjacent territories are reported as warnings.
 
 ## Status
 
 - [x] Canonical territory + adjacency data
 - [x] Hexagon reconstruction of all 42 territories
-- [x] Contiguous continents — land borders touch, water crossings stay gaps
-- [x] Traced territory outlines rasterised to hexes (recognisable silhouettes + size variation)
+- [x] Real Risk territory outlines rasterised to hexes (faithful coastlines, sizes & islands)
+- [x] Inland seas (Great Lakes, Black, Mediterranean, Caspian) carved from the source
 - [x] three.js map rendering (north-up / east-right), continent colouring, hover
 - [x] Graph overlay (nodes + edges)
-- [ ] Further outline detail per territory (more polygon vertices) as desired
 - [ ] Graph-theory analysis: centrality, chokepoints, continent defensibility, cut vertices
 
 ## Roadmap toward graph theory
@@ -75,3 +78,9 @@ Once the map feels right, the same `territories.json` feeds questions like:
 - **Where are the chokepoints?** — cut vertices and bridges (e.g. Central America, the
   Australia/Asia link at Siam).
 - **How defensible is a continent?** — count and location of its border territories.
+
+## Credits
+
+Territory outlines are derived from [raddrick/risk-map-svg](https://github.com/raddrick/risk-map-svg),
+itself adapted from Wikimedia Commons [`File:Risk_board.svg`](https://commons.wikimedia.org/wiki/File:Risk_board.svg).
+RISK is a trademark of Hasbro; this is a non-commercial graph-theory project.

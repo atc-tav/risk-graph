@@ -80,7 +80,8 @@ for (const id of ids) {
     const [c, r] = stack.pop();
     for (const [nc, nr] of nbrs(c, r)) if (set.has(key(nc, nr)) && !seen.has(key(nc, nr))) { seen.add(key(nc, nr)); stack.push([nc, nr]); }
   }
-  if (seen.size !== set.size) errors.push(`${id}: not contiguous (${seen.size}/${set.size} connected)`);
+  // Real territories can have offshore islands, so non-contiguity is a warning.
+  if (seen.size !== set.size) warns.push(`${id}: not contiguous (${seen.size}/${set.size} connected — likely offshore islands)`);
 }
 
 // ---- land borders must touch ----

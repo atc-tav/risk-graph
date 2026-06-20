@@ -1,72 +1,79 @@
-// Generates data/hexmap.json by rasterising traced territory outlines
-// (data/shapes.json) onto the hex grid at SCALE resolution.
-//   - each hex joins the territory with the smallest SIGNED distance to its
-//     polygon (negative = inside), within coastal reach R; else ocean.
-//   - hexes inside a `_seas` polygon are forced to ocean (inland seas / channels
-//     that separate islands from the mainland).
-// Usage:  node tools/gen-map.mjs [R] [SCALE]
+// Rasterises the real Risk territory outlines (data/shapes.json, SVG-coordinate
+// space, imported by tools/import-svg.mjs) onto the hex grid:
+//   - a hex joins the territory whose polygon(s) contain its center
+//     (even-odd across sub-polygons, so islands and holes work);
+//   - hexes inside a sea polygon, or outside every territory, are ocean;
+//   - a small MARGIN reassigns near-border ocean hexes to the nearest territory
+//     so thin slivers between shared edges don't leave gaps.
+// Usage:  node tools/gen-map.mjs [hexRadiusSvgUnits] [margin]
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { hexToPixel } from '../src/hex.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const shapes = JSON.parse(readFileSync(join(root, 'data/shapes.json'), 'utf8'));
-const R = Number(process.argv[2] ?? 1.3);
-const SCALE = Number(process.argv[3] ?? 2);
-
+const S = Number(process.argv[2] ?? 4.5);     // hex radius in SVG units
+const MARGIN = Number(process.argv[3] ?? 2.2); // near-border gap fill (SVG units)
 const SQRT3 = Math.sqrt(3);
-const vpix = ([c, r]) => ({ x: SQRT3 * SCALE * c, y: 1.5 * SCALE * r });
-const reach = R * SCALE;
-const ids = Object.keys(shapes).filter(k => !k.startsWith('_'));
-const polys = {};
-for (const id of ids) polys[id] = shapes[id].map(vpix);
-const seas = (shapes._seas || []).map(poly => poly.map(vpix));
 
-function segDist(p, a, b) {
-  const vx = b.x - a.x, vy = b.y - a.y, wx = p.x - a.x, wy = p.y - a.y;
-  const len2 = vx * vx + vy * vy || 1e-9;
-  const t = Math.max(0, Math.min(1, (wx * vx + wy * vy) / len2));
-  return Math.hypot(p.x - (a.x + t * vx), p.y - (a.y + t * vy));
-}
-function inside(p, poly) {
+const ids = Object.keys(shapes.territories);
+const polysOf = shapes.territories;
+const seas = shapes.seas || [];
+const bbox = (polys) => {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of polys) for (const [x, y] of p) { if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; }
+  return { x0, y0, x1, y1 };
+};
+const tb = {}; for (const id of ids) tb[id] = bbox(polysOf[id]);
+
+function inPoly(px, py, poly) {
   let yes = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i], b = poly[j];
-    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) yes = !yes;
+    const [ax, ay] = poly[i], [bx, by] = poly[j];
+    if ((ay > py) !== (by > py) && px < ((bx - ax) * (py - ay)) / (by - ay) + ax) yes = !yes;
   }
   return yes;
 }
-function signedDist(p, poly) {
+const inTerr = (px, py, id) => { let v = false; for (const p of polysOf[id]) if (inPoly(px, py, p)) v = !v; return v; };
+function distPoly(px, py, polys) {
   let d = Infinity;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) d = Math.min(d, segDist(p, poly[i], poly[j]));
-  return inside(p, poly) ? -d : d;
+  for (const poly of polys) for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [ax, ay] = poly[i], [bx, by] = poly[j];
+    const vx = bx - ax, vy = by - ay, wx = px - ax, wy = py - ay;
+    const t = Math.max(0, Math.min(1, (wx * vx + wy * vy) / (vx * vx + vy * vy || 1e-9)));
+    d = Math.min(d, Math.hypot(px - (ax + t * vx), py - (ay + t * vy)));
+  }
+  return d;
 }
 
-const allV = ids.flatMap(id => shapes[id]);
-const c0 = Math.min(...allV.map(v => v[0])) * SCALE - 4, c1 = Math.max(...allV.map(v => v[0])) * SCALE + 4;
-const r0 = Math.min(...allV.map(v => v[1])) * SCALE - 4, r1 = Math.max(...allV.map(v => v[1])) * SCALE + 4;
+const all = bbox(ids.flatMap(id => polysOf[id]));
+const c1 = Math.ceil(all.x1 / (S * SQRT3)) + 1, r1 = Math.ceil(all.y1 / (S * 1.5)) + 1;
 
 const territories = {}; for (const id of ids) territories[id] = [];
-let placed = 0, carved = 0;
-for (let r = r0; r <= r1; r++) {
-  for (let c = c0; c <= c1; c++) {
-    const p = hexToPixel(c, r, 1);
-    if (seas.some(s => inside(p, s))) { carved++; continue; }
-    let best = null, bestD = Infinity;
-    for (const id of ids) { const d = signedDist(p, polys[id]); if (d < bestD) { bestD = d; best = id; } }
-    if (best && bestD <= reach) { territories[best].push([c, r]); placed++; }
+let placed = 0, ocean = 0;
+for (let r = 0; r <= r1; r++) {
+  for (let c = 0; c <= c1; c++) {
+    const px = S * SQRT3 * (c + 0.5 * (r & 1));
+    const py = S * 1.5 * r;
+    if (seas.some(s => inPoly(px, py, s))) { ocean++; continue; }
+    let hit = null;
+    for (const id of ids) { const b = tb[id]; if (px < b.x0 || px > b.x1 || py < b.y0 || py > b.y1) continue; if (inTerr(px, py, id)) { hit = id; break; } }
+    if (!hit) { // near-border fallback
+      let best = null, bd = MARGIN;
+      for (const id of ids) { const b = tb[id]; if (px < b.x0 - MARGIN || px > b.x1 + MARGIN || py < b.y0 - MARGIN || py > b.y1 + MARGIN) continue; const d = distPoly(px, py, polysOf[id]); if (d < bd) { bd = d; best = id; } }
+      hit = best;
+    }
+    if (hit) { territories[hit].push([c, r]); placed++; } else ocean++;
   }
 }
 
-const out = { _comment: 'GENERATED by tools/gen-map.mjs from data/shapes.json. Edit shapes, not this.', layout: 'odd-r', orientation: 'pointy', territories };
+const out = { _comment: 'GENERATED by tools/gen-map.mjs from data/shapes.json (real Risk outlines). Edit shapes via import-svg.', layout: 'odd-r', orientation: 'pointy', territories };
 writeFileSync(join(root, 'data/hexmap.json'),
   JSON.stringify(out).replace(/,"(\w[\w_]*":\[)/g, ',\n    "$1').replace(/{"_comment/, '{\n  "_comment') + '\n');
 
 const cnt = ids.map(id => [id, territories[id].length]).sort((a, b) => a[1] - b[1]);
-console.log(`R=${R} SCALE=${SCALE}  placed ${placed} hexes, carved ${carved} sea`);
+console.log(`S=${S} margin=${MARGIN}  placed ${placed} land, ${ocean} ocean`);
 console.log('smallest:', cnt.slice(0, 4).map(x => `${x[0]} ${x[1]}`).join(', '));
 console.log('largest: ', cnt.slice(-4).map(x => `${x[0]} ${x[1]}`).join(', '));
-const empty = cnt.filter(x => x[1] === 0);
-if (empty.length) console.log('EMPTY:', empty.map(x => x[0]).join(', '));
+const empty = cnt.filter(x => x[1] === 0); if (empty.length) console.log('EMPTY:', empty.map(x => x[0]).join(', '));
 console.log('-> data/hexmap.json (run `npm run validate`)');
