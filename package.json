@@ -1,0 +1,20 @@
+{
+  "name": "risk-graph",
+  "version": "0.1.0",
+  "description": "Classic Risk map reconstructed from hexagons in three.js, with a graph-theory overlay of territories and their connections.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "validate": "node tools/validate.mjs",
+    "map-preview": "node tools/preview.mjs"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^0.1.65",
+    "vite": "^6.0.0"
+  },
+  "dependencies": {
+    "three": "^0.184.0"
+  }
+}
