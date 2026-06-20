@@ -272,6 +272,7 @@ function styleVisibility() {
 function renderMetric() {
   if (!metric) return;
   const { dist, md, source } = metric;
+  dlFar.textContent = `far · ${md} hop${md === 1 ? '' : 's'}`;
   for (const id of Object.keys(meshById)) {
     const m = meshById[id];
     const norm = dist[id] === Infinity ? null : dist[id] / (md || 1);
@@ -327,6 +328,14 @@ lab.innerHTML = `
       <button data-viz="elev">Elevation</button>
       <button data-viz="graph">Graph</button>
     </div>
+    <div id="dlegend">
+      <div class="dl-bar"></div>
+      <div class="dl-ax"><span>near · 0 hops</span><span id="dl-far">far</span></div>
+      <div class="dl-keys">
+        <span><i class="dl-sw" id="dl-path"></i>shortest path</span>
+        <span><i class="dl-sw none" id="dl-none"></i>unreachable</span>
+      </div>
+    </div>
     <div id="narr" class="hint"></div>
     <div class="seg sm"><button id="tour">▶ Guided tour</button></div>
   </div>`;
@@ -335,6 +344,13 @@ hud.appendChild(lab);
 const vizBox = lab.querySelector('#viz');
 const narr = lab.querySelector('#narr');
 const setNarr = (h) => (narr.innerHTML = h);
+
+// distance legend — built from the same ramp()/colours used to paint the map
+const dlFar = lab.querySelector('#dl-far');
+lab.querySelector('.dl-bar').style.background =
+  `linear-gradient(90deg, ${[0, .2, .4, .6, .8, 1].map((n) => '#' + ramp(n).getHexString()).join(', ')})`;
+lab.querySelector('#dl-path').style.background = '#ffd24a';
+lab.querySelector('#dl-none').style.background = '#' + NONE.getHexString();
 
 function setMode(m) {
   mode = m;
