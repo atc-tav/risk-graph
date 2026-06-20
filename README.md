@@ -36,18 +36,23 @@ graph overlay and labels from the HUD.
 ## Tooling
 
 ```bash
-npm run validate     # assert 42 territories, symmetric adjacency, clean hex tiling
+npm run validate     # graph + hex checks (see below); also prints an ASCII map
 npm run map-preview  # render the hex map to preview.png (no browser needed)
+node tools/check-orientation.mjs   # confirm on-screen N/S/E/W without WebGL
 ```
 
-`validate` currently confirms: **42 territories · 83 undirected edges · 6 continents** with the
-canonical sizes (NA 9, SA 4, EU 7, AF 6, AS 12, AU 4).
+`validate` confirms: **42 territories · 83 undirected edges · 6 continents** (NA 9, SA 4, EU 7,
+AF 6, AS 12, AU 4), that **every territory is a contiguous hex blob**, and that **every land
+border is realised as two touching hexes**. Genuine water crossings (Alaska↔Kamchatka, the
+Mediterranean, islands like Britain/Japan/Madagascar) are listed as `SEA_ROUTES` and allowed to
+be gaps.
 
 ## Status
 
 - [x] Canonical territory + adjacency data
 - [x] Hexagon reconstruction of all 42 territories
-- [x] three.js map rendering, continent colouring, hover
+- [x] Contiguous continents — land borders touch, water crossings stay gaps
+- [x] three.js map rendering (north-up / east-right), continent colouring, hover
 - [x] Graph overlay (nodes + edges)
 - [ ] Refine hex shapes to hug the classic outlines more closely
 - [ ] Graph-theory analysis: centrality, chokepoints, continent defensibility, cut vertices

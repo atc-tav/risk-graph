@@ -18,8 +18,9 @@ const allHexes = Object.values(H).flat();
 const b = hexesBounds(allHexes, SIZE);
 const cx = b.minX + b.width / 2;
 const cy = b.minY + b.height / 2;
-// pixel (x,y) -> world (x, z); y grows "south", so we negate to keep north up.
-const worldX = (x) => x - cx;
+// pixel (x,y) -> world (x, z). Negate X so east is screen-right and negate the
+// y term so north is screen-up under the south-facing camera (see check-orientation.mjs).
+const worldX = (x) => -(x - cx);
 const worldZ = (y) => -(y - cy);
 
 const centers = {};
@@ -39,7 +40,10 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color('#0c2238');
 
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 2000);
-camera.position.set(0, b.width * 0.6, b.height * 0.75);
+// View from the south (-Z) and above, so north is up and east is to the right
+// (matching a conventional map; viewing from +Z would mirror east/west).
+const span = Math.max(b.width, b.height);
+camera.position.set(0, span * 0.78, -span * 0.72);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -75,7 +79,8 @@ for (const id of Object.keys(H)) {
   const geom = BufferGeometryUtils.mergeGeometries(H[id].map(([c, r]) => hexPrism(c, r)));
   const color = new THREE.Color(C[T[id].continent].color);
   baseColors[id] = color;
-  const mat = new THREE.MeshStandardMaterial({ color: color.clone(), roughness: 0.85, metalness: 0.0 });
+  // DoubleSide because negating X in worldX reverses the extruded shape winding.
+  const mat = new THREE.MeshStandardMaterial({ color: color.clone(), roughness: 0.85, metalness: 0.0, side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geom, mat);
   mesh.rotation.x = -Math.PI / 2;   // lay the extrusion flat (XY shape -> XZ plane)
   mesh.userData.id = id;
