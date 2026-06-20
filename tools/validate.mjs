@@ -95,6 +95,11 @@ for (const id of ids) for (const other of T[id].adjacent) {
 }
 if (missing.length) { errors.push(`${missing.length} land border(s) not touching:`); missing.forEach(m => errors.push('    ' + m)); }
 
+// ---- touching territories must be graph-adjacent (no false borders) ----
+const adjacent = (a, b) => (T[a].adjacent || []).includes(b);
+const falseBorders = [...touching].filter(p => { const [a, b] = p.split('|'); return !adjacent(a, b); });
+if (falseBorders.length) { errors.push(`${falseBorders.length} false border(s) (touch but not adjacent):`); falseBorders.forEach(p => errors.push('    ' + p.replace('|', ' <-> '))); }
+
 // ---- ASCII view ----
 let maxC = 0, maxR = 0;
 for (const [c, r] of owner.keys() ? [...owner.keys()].map(k => k.split(',').map(Number)) : []) { maxC = Math.max(maxC, c); maxR = Math.max(maxR, r); }

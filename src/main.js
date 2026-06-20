@@ -88,9 +88,35 @@ for (const id of Object.keys(H)) {
   territoryMeshes.push(mesh);
 }
 
+// ---- country borders: draw every hex edge not shared within one territory ----
+const borderEdges = new Map();
+const ek = (px, py) => `${worldX(px).toFixed(2)},${worldZ(py).toFixed(2)}`;
+for (const id of Object.keys(H)) {
+  for (const [c, r] of H[id]) {
+    const cs = hexCorners(c, r, SIZE);
+    for (let i = 0; i < 6; i++) {
+      const p1 = cs[i], p2 = cs[(i + 1) % 6];
+      const key = [ek(p1.x, p1.y), ek(p2.x, p2.y)].sort().join('|');
+      const e = borderEdges.get(key) || { p1, p2, n: 0, same: true, first: id };
+      e.n++; if (e.first !== id) e.same = false;
+      borderEdges.set(key, e);
+    }
+  }
+}
+const borderPts = [];
+for (const e of borderEdges.values()) {
+  if (e.n === 2 && e.same) continue; // interior edge
+  borderPts.push(new THREE.Vector3(worldX(e.p1.x), HEIGHT + 0.06, worldZ(e.p1.y)),
+                 new THREE.Vector3(worldX(e.p2.x), HEIGHT + 0.06, worldZ(e.p2.y)));
+}
+scene.add(new THREE.LineSegments(
+  new THREE.BufferGeometry().setFromPoints(borderPts),
+  new THREE.LineBasicMaterial({ color: 0x10100c, transparent: true, opacity: 0.85 })
+));
+
 // ---- graph overlay: nodes + edges ----
 const graphGroup = new THREE.Group();
-const nodeGeom = new THREE.SphereGeometry(0.42, 16, 16);
+const nodeGeom = new THREE.SphereGeometry(0.8, 16, 16);
 const nodeMat = new THREE.MeshStandardMaterial({ color: '#f5f0e0', emissive: '#222', roughness: 0.4 });
 for (const id of Object.keys(T)) {
   const n = new THREE.Mesh(nodeGeom, nodeMat);
@@ -128,7 +154,7 @@ function makeLabel(text) {
   const tex = new THREE.CanvasTexture(c);
   tex.minFilter = THREE.LinearFilter;
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
-  spr.scale.set(c.width / c.height * 1.6, 1.6, 1);
+  spr.scale.set(c.width / c.height * 2.4, 2.4, 1);
   return spr;
 }
 const labelGroup = new THREE.Group();
