@@ -3,7 +3,7 @@
     "north_america": { "name": "North America", "bonus": 5, "color": "#e2c044" },
     "south_america": { "name": "South America", "bonus": 2, "color": "#d56b5a" },
     "europe":        { "name": "Europe",        "bonus": 5, "color": "#5b7fb0" },
-    "africa":        { "name": "Africa",        "bonus": 3, "color": "#9c6b3f" },
+    "africa":        { "name": "Africa",        "bonus": 3, "color": "#df8e3f" },
     "asia":          { "name": "Asia",          "bonus": 7, "color": "#7fa05b" },
     "australia":     { "name": "Australia",     "bonus": 2, "color": "#9b59b6" }
   },

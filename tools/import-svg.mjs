@@ -100,6 +100,14 @@ for (const file of readdirSync(dir)) {
 }
 
 const out = { _source: 'github.com/raddrick/risk-map-svg (Wikimedia Risk_board.svg)', _coordspace: 'svg', territories, seas };
+
+// Hand-placed extra inland water (SVG coords): a few hexes each to suggest a gulf.
+const EXTRA_SEAS = [
+  [[147, 284], [156, 277], [165, 289], [157, 300]], // Gulf of California (Sea of Cortez)
+  [[600, 379], [612, 361], [628, 374], [617, 393]], // Persian Gulf
+];
+seas.push(...EXTRA_SEAS);
+
 writeFileSync(join(root, 'data/shapes.json'), JSON.stringify(out));
 console.log(`Imported ${Object.keys(territories).length} territories, ${seas.length} sea polygons`);
 const allpts = Object.values(territories).flat(2);

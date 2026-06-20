@@ -123,17 +123,26 @@ for (const id of Object.keys(T)) {
   n.position.copy(centers[id]).setY(NODE_Y);
   graphGroup.add(n);
 }
-const edgePts = [];
+const edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 });
+const straightPts = [];
 for (const id of Object.keys(T)) {
   for (const other of T[id].adjacent) {
     if (id >= other) continue;
-    edgePts.push(centers[id].clone().setY(NODE_Y), centers[other].clone().setY(NODE_Y));
+    const a = centers[id].clone().setY(NODE_Y), z = centers[other].clone().setY(NODE_Y);
+    const d = a.distanceTo(z);
+    if (d > span * 0.5) {
+      // long sea routes (e.g. Alaska–Kamchatka) arc up over the map so they
+      // stay visible and don't slice through other territories.
+      const mid = a.clone().add(z).multiplyScalar(0.5);
+      mid.y = NODE_Y + d * 0.5;
+      const curve = new THREE.QuadraticBezierCurve3(a, mid, z);
+      graphGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(48)), edgeMat));
+    } else {
+      straightPts.push(a, z);
+    }
   }
 }
-const edges = new THREE.LineSegments(
-  new THREE.BufferGeometry().setFromPoints(edgePts),
-  new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 })
-);
+const edges = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(straightPts), edgeMat);
 graphGroup.add(edges);
 scene.add(graphGroup);
 
@@ -202,6 +211,25 @@ for (const [, c] of Object.entries(C)) {
 }
 document.getElementById('toggle-graph').addEventListener('change', (e) => graphGroup.visible = e.target.checked);
 document.getElementById('toggle-labels').addEventListener('change', (e) => labelGroup.visible = e.target.checked);
+
+// ---- light / dark theme ----
+const THEMES = {
+  dark:  { bg: '#0c2238', ocean: '#0e2a45', edge: 0xffffff, edgeOpacity: 0.40 },
+  light: { bg: '#f1ead7', ocean: '#f6f1e4', edge: 0x2b4a63, edgeOpacity: 0.55 },
+};
+function applyTheme(name) {
+  const t = THEMES[name];
+  scene.background.set(t.bg);
+  ocean.material.color.set(t.ocean);
+  edgeMat.color.setHex(t.edge);
+  edgeMat.opacity = t.edgeOpacity;
+  document.body.classList.toggle('light', name === 'light');
+  themeBtn.textContent = name === 'light' ? '◐ Dark' : '◑ Light';
+  themeBtn.dataset.mode = name;
+}
+const themeBtn = document.getElementById('theme');
+themeBtn.addEventListener('click', () => applyTheme(themeBtn.dataset.mode === 'light' ? 'dark' : 'light'));
+applyTheme('dark');
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
