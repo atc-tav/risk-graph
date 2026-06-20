@@ -255,6 +255,30 @@ const pathLine = new THREE.Line(new THREE.BufferGeometry(),
 pathLine.visible = false;
 scene.add(pathLine);
 
+// numbered step badges along the path (rebuilt each render).
+const stepGroup = new THREE.Group();
+scene.add(stepGroup);
+function makeBadge(text) {
+  const s = 64, c = document.createElement('canvas');
+  c.width = c.height = s;
+  const ctx = c.getContext('2d');
+  ctx.beginPath(); ctx.arc(s / 2, s / 2, s / 2 - 5, 0, Math.PI * 2);
+  ctx.fillStyle = '#15202e'; ctx.fill();
+  ctx.lineWidth = 5; ctx.strokeStyle = '#ffd24a'; ctx.stroke();
+  ctx.fillStyle = '#ffd24a';
+  ctx.font = 'bold 34px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, s / 2, s / 2 + 2);
+  const tex = new THREE.CanvasTexture(c); tex.minFilter = THREE.LinearFilter;
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+  spr.scale.set(1.6, 1.6, 1);
+  return spr;
+}
+function clearSteps() {
+  for (const s of stepGroup.children) { s.material.map.dispose(); s.material.dispose(); }
+  stepGroup.clear();
+}
+
 let mode = 'map';          // 'map' | 'paths'
 let vizStyle = 'color';    // 'color' | 'elev' | 'graph'
 let metric = null;         // { dist, md, source }
@@ -272,7 +296,7 @@ function styleVisibility() {
 function renderMetric() {
   if (!metric) return;
   const { dist, md, source } = metric;
-  dlFar.textContent = `far · ${md} hop${md === 1 ? '' : 's'}`;
+  buildDistLegend(md);
   for (const id of Object.keys(meshById)) {
     const m = meshById[id];
     const norm = dist[id] === Infinity ? null : dist[id] / (md || 1);
@@ -290,11 +314,23 @@ function renderMetric() {
     nodeById[source].scale.setScalar(3.4);
     nodeById[source].material.color.set('#ffffff');
   }
-  // path highlight
+  // path highlight + numbered step badges
+  clearSteps();
   if (pathIds && pathIds.length > 1) {
     const y = (vizStyle === 'elev') ? HEIGHT + HEIGHT_ELEV * HEIGHT + 1.2 : NODE_Y;
-    pathLine.geometry.setFromPoints(pathIds.map((id) => centers[id].clone().setY(y)));
+    // Recreate the geometry rather than reusing it: THREE's setFromPoints keeps
+    // the old (larger) buffer and only overwrites the first N vertices, so a
+    // shorter path would trail a stale segment to the previous endpoint.
+    pathLine.geometry.dispose();
+    pathLine.geometry = new THREE.BufferGeometry().setFromPoints(pathIds.map((id) => centers[id].clone().setY(y)));
     pathLine.visible = true;
+    // source is step 0 (the start); each hop's destination is numbered 1..n.
+    pathIds.forEach((id, i) => {
+      if (i === 0) return;
+      const b = makeBadge(String(i));
+      b.position.copy(centers[id]).setY(y + 0.7);
+      stepGroup.add(b);
+    });
   } else pathLine.visible = false;
   styleVisibility();
 }
@@ -306,7 +342,7 @@ function paintFrom(source) {
 }
 
 function restoreMap() {
-  metric = null; pathIds = null; pathLine.visible = false;
+  metric = null; pathIds = null; pathLine.visible = false; clearSteps();
   for (const id of Object.keys(meshById)) { meshById[id].material.color.copy(baseColors[id]); meshById[id].scale.z = 1; }
   for (const id of Object.keys(nodeById)) { nodeById[id].scale.setScalar(1); nodeById[id].material.color.set('#f5f0e0'); }
   styleVisibility();
@@ -329,8 +365,8 @@ lab.innerHTML = `
       <button data-viz="graph">Graph</button>
     </div>
     <div id="dlegend">
-      <div class="dl-bar"></div>
-      <div class="dl-ax"><span>near · 0 hops</span><span id="dl-far">far</span></div>
+      <div class="dl-cells"></div>
+      <div class="dl-cap">hops from source</div>
       <div class="dl-keys">
         <span><i class="dl-sw" id="dl-path"></i>shortest path</span>
         <span><i class="dl-sw none" id="dl-none"></i>unreachable</span>
@@ -345,10 +381,22 @@ const vizBox = lab.querySelector('#viz');
 const narr = lab.querySelector('#narr');
 const setNarr = (h) => (narr.innerHTML = h);
 
-// distance legend — built from the same ramp()/colours used to paint the map
-const dlFar = lab.querySelector('#dl-far');
-lab.querySelector('.dl-bar').style.background =
-  `linear-gradient(90deg, ${[0, .2, .4, .6, .8, 1].map((n) => '#' + ramp(n).getHexString()).join(', ')})`;
+// distance legend — discrete cells, one per hop value (0..md), built from the
+// same ramp() the map uses so the swatches match the painted territories exactly.
+const dlCells = lab.querySelector('.dl-cells');
+let dlMd = -1;
+function buildDistLegend(md) {
+  if (md === dlMd) return;          // only rebuild when the hop range changes
+  dlMd = md;
+  dlCells.innerHTML = '';
+  for (let k = 0; k <= md; k++) {
+    const cell = document.createElement('div');
+    cell.className = 'dl-cell';
+    cell.style.background = '#' + ramp(md ? k / md : 0).getHexString();
+    cell.textContent = k;
+    dlCells.appendChild(cell);
+  }
+}
 lab.querySelector('#dl-path').style.background = '#ffd24a';
 lab.querySelector('#dl-none').style.background = '#' + NONE.getHexString();
 

@@ -40,9 +40,10 @@
     body.light #hud .seg button.on { background: rgba(70,120,190,0.22); border-color: rgba(70,120,190,0.5); }
     #narr { margin-top: 8px; line-height: 1.45; opacity: 0.95; }
     #dlegend { margin-top: 8px; }
-    #dlegend .dl-bar { height: 9px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.18); }
-    body.light #dlegend .dl-bar { border-color: rgba(0,0,0,0.18); }
-    #dlegend .dl-ax { display: flex; justify-content: space-between; font-size: 10px; opacity: 0.75; margin-top: 2px; }
+    #dlegend .dl-cells { display: flex; gap: 2px; }
+    #dlegend .dl-cell { flex: 1; height: 16px; min-width: 0; border-radius: 2px;
+      font-size: 9px; line-height: 16px; text-align: center; color: rgba(0,0,0,0.7); font-weight: 600; }
+    #dlegend .dl-cap { font-size: 10px; opacity: 0.7; margin-top: 3px; }
     #dlegend .dl-keys { display: flex; gap: 12px; font-size: 10px; opacity: 0.85; margin-top: 4px; }
     #dlegend .dl-keys span { display: flex; align-items: center; gap: 4px; }
     #dlegend .dl-sw { width: 18px; height: 4px; border-radius: 2px; display: inline-block; }
