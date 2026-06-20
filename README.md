@@ -69,7 +69,10 @@ islands) and cosmetic corner-touches between non-adjacent territories are report
 - [x] Inland seas (Great Lakes, Black, Mediterranean, Caspian) carved from the source
 - [x] three.js map rendering (north-up / east-right), continent colouring, hover
 - [x] Graph overlay (nodes + edges)
-- [ ] Graph-theory analysis: centrality, chokepoints, continent defensibility, cut vertices
+- [x] Graph-theory lab — **Paths & distance** module (BFS distances, shortest path, world
+      diameter) with three comparable visualization styles (Colour / Elevation / Graph) and a
+      guided tour. Algorithms in [`src/graph.js`](src/graph.js).
+- [ ] Further modules: centrality, chokepoints / cut vertices, continent defensibility
 
 ## Roadmap toward graph theory
 

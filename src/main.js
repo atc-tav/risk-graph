@@ -4,6 +4,7 @@ import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js'
 import territories from '../data/territories.json';
 import hexmap from '../data/hexmap.json';
 import { hexCorners, clusterCentroid, hexesBounds } from './hex.js';
+import { bfs, shortestPath, maxDist, diameter } from './graph.js';
 
 const T = territories.territories;
 const C = territories.continents;
@@ -109,18 +110,20 @@ for (const e of borderEdges.values()) {
   borderPts.push(new THREE.Vector3(worldX(e.p1.x), HEIGHT + 0.06, worldZ(e.p1.y)),
                  new THREE.Vector3(worldX(e.p2.x), HEIGHT + 0.06, worldZ(e.p2.y)));
 }
-scene.add(new THREE.LineSegments(
+const borderLines = new THREE.LineSegments(
   new THREE.BufferGeometry().setFromPoints(borderPts),
   new THREE.LineBasicMaterial({ color: 0x10100c, transparent: true, opacity: 0.85 })
-));
+);
+scene.add(borderLines);
 
 // ---- graph overlay: nodes + edges ----
 const graphGroup = new THREE.Group();
 const nodeGeom = new THREE.SphereGeometry(0.8, 16, 16);
-const nodeMat = new THREE.MeshStandardMaterial({ color: '#f5f0e0', emissive: '#222', roughness: 0.4 });
+const nodeById = {};
 for (const id of Object.keys(T)) {
-  const n = new THREE.Mesh(nodeGeom, nodeMat);
+  const n = new THREE.Mesh(nodeGeom, new THREE.MeshStandardMaterial({ color: '#f5f0e0', emissive: '#222', roughness: 0.4 }));
   n.position.copy(centers[id]).setY(NODE_Y);
+  nodeById[id] = n;
   graphGroup.add(n);
 }
 const edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 });
@@ -185,11 +188,11 @@ addEventListener('pointermove', (e) => {
   ray.setFromCamera(mouse, camera);
   const hit = ray.intersectObjects(territoryMeshes, false)[0];
   const id = hit ? hit.object.userData.id : null;
-  if (id !== hovered) {
+  if (id !== hovered && mode === 'map') {
     if (hovered) territoryMeshes.find(m => m.userData.id === hovered)?.material.color.copy(baseColors[hovered]);
     hovered = id;
     if (id) hit.object.material.color.copy(baseColors[id]).offsetHSL(0, 0, 0.18);
-  }
+  } else if (mode !== 'map') hovered = id;
   if (id) {
     const t = T[id];
     tooltip.style.opacity = '1';
@@ -230,6 +233,180 @@ function applyTheme(name) {
 const themeBtn = document.getElementById('theme');
 themeBtn.addEventListener('click', () => applyTheme(themeBtn.dataset.mode === 'light' ? 'dark' : 'light'));
 applyTheme('dark');
+
+// ====================================================================
+// Graph-theory lab: lesson modules + 3 visualization styles to compare
+// ====================================================================
+const meshById = {};
+territoryMeshes.forEach((m) => (meshById[m.userData.id] = m));
+const NAME = (id) => T[id].name;
+const graphToggle = document.getElementById('toggle-graph');
+const labelToggle = document.getElementById('toggle-labels');
+const HEIGHT_ELEV = 26;          // elevation exaggeration for the "terrain" style
+const DIM = new THREE.Color('#39414e');
+const NONE = new THREE.Color('#2b3340');
+
+// near (0) = warm/red, far (1) = cool/blue — a clear distance ramp.
+const ramp = (n) => new THREE.Color().setHSL((0.0 + 0.62 * n), 0.68, 0.5);
+
+// bright path line, lazily shown.
+const pathLine = new THREE.Line(new THREE.BufferGeometry(),
+  new THREE.LineBasicMaterial({ color: 0xffd24a, transparent: true, opacity: 0.95 }));
+pathLine.visible = false;
+scene.add(pathLine);
+
+let mode = 'map';          // 'map' | 'paths'
+let vizStyle = 'color';    // 'color' | 'elev' | 'graph'
+let metric = null;         // { dist, md, source }
+let pathIds = null;        // current highlighted path
+let pickState = 'source';  // paths-mode click state
+const D = diameter();
+
+function styleVisibility() {
+  if (mode === 'map') { borderLines.visible = true; graphGroup.visible = graphToggle.checked; labelGroup.visible = labelToggle.checked; return; }
+  borderLines.visible = vizStyle === 'color';
+  graphGroup.visible = vizStyle === 'graph';
+  labelGroup.visible = labelToggle.checked && vizStyle !== 'elev';
+}
+
+function renderMetric() {
+  if (!metric) return;
+  const { dist, md, source } = metric;
+  for (const id of Object.keys(meshById)) {
+    const m = meshById[id];
+    const norm = dist[id] === Infinity ? null : dist[id] / (md || 1);
+    if (vizStyle === 'graph') {
+      m.material.color.copy(DIM); m.scale.z = 1;
+      const n = nodeById[id];
+      n.scale.setScalar(0.7 + (norm ?? 0) * 2.4);
+      n.material.color.copy(norm === null ? NONE : ramp(norm));
+    } else {
+      m.material.color.copy(norm === null ? NONE : ramp(norm));
+      m.scale.z = vizStyle === 'elev' ? 1 + (norm ?? 0) * HEIGHT_ELEV : 1;
+    }
+  }
+  if (vizStyle === 'graph') { // emphasise the source node
+    nodeById[source].scale.setScalar(3.4);
+    nodeById[source].material.color.set('#ffffff');
+  }
+  // path highlight
+  if (pathIds && pathIds.length > 1) {
+    const y = (vizStyle === 'elev') ? HEIGHT + HEIGHT_ELEV * HEIGHT + 1.2 : NODE_Y;
+    pathLine.geometry.setFromPoints(pathIds.map((id) => centers[id].clone().setY(y)));
+    pathLine.visible = true;
+  } else pathLine.visible = false;
+  styleVisibility();
+}
+
+function paintFrom(source) {
+  const { dist } = bfs(source);
+  metric = { dist, md: maxDist(dist), source };
+  renderMetric();
+}
+
+function restoreMap() {
+  metric = null; pathIds = null; pathLine.visible = false;
+  for (const id of Object.keys(meshById)) { meshById[id].material.color.copy(baseColors[id]); meshById[id].scale.z = 1; }
+  for (const id of Object.keys(nodeById)) { nodeById[id].scale.setScalar(1); nodeById[id].material.color.set('#f5f0e0'); }
+  styleVisibility();
+}
+
+// ---- panel UI (built in JS, appended to the HUD) ----
+const hud = document.getElementById('hud');
+const lab = document.createElement('div');
+lab.id = 'lab';
+lab.innerHTML = `
+  <hr/>
+  <div class="seg">
+    <button data-mode="map" class="on">Map</button>
+    <button data-mode="paths">Paths &amp; distance</button>
+  </div>
+  <div id="viz" hidden>
+    <div class="seg sm">
+      <button data-viz="color" class="on">Colour</button>
+      <button data-viz="elev">Elevation</button>
+      <button data-viz="graph">Graph</button>
+    </div>
+    <div id="narr" class="hint"></div>
+    <div class="seg sm"><button id="tour">▶ Guided tour</button></div>
+  </div>`;
+hud.appendChild(lab);
+
+const vizBox = lab.querySelector('#viz');
+const narr = lab.querySelector('#narr');
+const setNarr = (h) => (narr.innerHTML = h);
+
+function setMode(m) {
+  mode = m;
+  lab.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === m));
+  vizBox.hidden = m !== 'paths';
+  if (m === 'map') { restoreMap(); }
+  else { pickState = 'source'; paintFrom(D.a); pathIds = shortestPath(D.a, D.b); renderMetric();
+    setNarr(`World <b>diameter</b>: ${D.d} hops, ${NAME(D.a)} → ${NAME(D.b)} (gold). <br>Click a territory for distances, then another for a path.`); }
+}
+lab.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+
+function setViz(v) {
+  vizStyle = v;
+  lab.querySelectorAll('[data-viz]').forEach((b) => b.classList.toggle('on', b.dataset.viz === v));
+  // graph style needs uniform node baseline before re-render
+  for (const id of Object.keys(nodeById)) { nodeById[id].scale.setScalar(1); nodeById[id].material.color.set('#f5f0e0'); }
+  renderMetric();
+}
+lab.querySelectorAll('[data-viz]').forEach((b) => b.addEventListener('click', () => setViz(b.dataset.viz)));
+
+// keep toggles working alongside the lab
+graphToggle.addEventListener('change', styleVisibility);
+labelToggle.addEventListener('change', styleVisibility);
+
+// ---- guided tour ----
+const TOUR = [
+  { t: `Risk <b>is a graph</b>: 42 territories (nodes), 83 borders (edges). <b>Distance</b> = the fewest borders between two territories.` },
+  { t: `Distances from <b>Brazil</b> — colour shows how many hops away each territory is.`, run: () => { paintFrom('brazil'); pathIds = null; } },
+  { t: `Same data, three ways — try <b>Colour / Elevation / Graph</b> above. Elevation raises far territories into terrain; Graph sizes the nodes.` },
+  { t: () => `The world's <b>diameter</b> (longest shortest path) is <b>${D.d} hops</b>: ${NAME(D.a)} → ${NAME(D.b)}.`, run: () => { paintFrom(D.a); pathIds = shortestPath(D.a, D.b); } },
+  { t: `Your turn: click any territory for its distances, then a second for the shortest path between them.` },
+];
+let tourI = -1;
+function tourStep(i) {
+  tourI = i;
+  const s = TOUR[i];
+  if (s.run) s.run();
+  renderMetric();
+  setNarr(`${typeof s.t === 'function' ? s.t() : s.t}<br><span style="opacity:.7">${i + 1}/${TOUR.length}</span>
+    <div class="seg sm" style="margin-top:6px">
+      ${i > 0 ? '<button id="tprev">‹ Back</button>' : ''}
+      ${i < TOUR.length - 1 ? '<button id="tnext">Next ›</button>' : '<button id="tdone">Done</button>'}
+    </div>`);
+  narr.querySelector('#tnext')?.addEventListener('click', () => tourStep(i + 1));
+  narr.querySelector('#tprev')?.addEventListener('click', () => tourStep(i - 1));
+  narr.querySelector('#tdone')?.addEventListener('click', () => setMode('paths'));
+}
+lab.querySelector('#tour').addEventListener('click', () => tourStep(0));
+
+// ---- click-to-pick (distinguish click from orbit drag) ----
+let down = null;
+addEventListener('pointerdown', (e) => (down = [e.clientX, e.clientY]));
+addEventListener('pointerup', (e) => {
+  if (!down || mode !== 'paths') return;
+  if (Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return; // was a drag
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObjects(territoryMeshes, false)[0];
+  if (!hit) return;
+  const id = hit.object.userData.id;
+  if (pickState === 'source') {
+    paintFrom(id); pathIds = null; renderMetric();
+    setNarr(`Distances from <b>${NAME(id)}</b>. Now click a <b>second</b> territory for the shortest path.`);
+    pickState = 'target';
+  } else {
+    pathIds = shortestPath(metric.source, id); renderMetric();
+    const hops = pathIds ? pathIds.length - 1 : '∞';
+    setNarr(`<b>${NAME(metric.source)} → ${NAME(id)}</b>: ${hops} hops${pathIds ? ' (gold path)' : ''}. Click again to start over.`);
+    pickState = 'source';
+  }
+});
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
