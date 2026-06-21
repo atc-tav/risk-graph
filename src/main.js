@@ -259,19 +259,20 @@ scene.add(pathLine);
 const stepGroup = new THREE.Group();
 scene.add(stepGroup);
 function makeBadge(text) {
-  const s = 64, c = document.createElement('canvas');
+  const s = 128, c = document.createElement('canvas');
   c.width = c.height = s;
   const ctx = c.getContext('2d');
-  ctx.beginPath(); ctx.arc(s / 2, s / 2, s / 2 - 5, 0, Math.PI * 2);
+  ctx.beginPath(); ctx.arc(s / 2, s / 2, s / 2 - 8, 0, Math.PI * 2);
   ctx.fillStyle = '#15202e'; ctx.fill();
-  ctx.lineWidth = 5; ctx.strokeStyle = '#ffd24a'; ctx.stroke();
+  ctx.lineWidth = 10; ctx.strokeStyle = '#ffd24a'; ctx.stroke();
   ctx.fillStyle = '#ffd24a';
-  ctx.font = 'bold 34px sans-serif';
+  ctx.font = 'bold 70px sans-serif';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(text, s / 2, s / 2 + 2);
+  ctx.fillText(text, s / 2, s / 2 + 4);
   const tex = new THREE.CanvasTexture(c); tex.minFilter = THREE.LinearFilter;
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
-  spr.scale.set(1.6, 1.6, 1);
+  spr.scale.set(3.2, 3.2, 1);
+  spr.renderOrder = 999;
   return spr;
 }
 function clearSteps() {
